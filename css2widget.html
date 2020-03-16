@@ -1,0 +1,195 @@
+<html>
+<head>
+<title>css2widget</title>
+<style>
+.container {
+    display: flex;
+}
+
+.css-input, .widget-output {
+    padding: 10px;
+    flex: 1;
+    min-height: 300px;
+    font-size: 20px;
+    overflow-y: auto;
+}
+
+.widget-output {
+    background: rgba(0,0,0,0.01);
+}
+</style>
+</head>
+<body>
+
+<button onclick="transfer()">转换</button>
+
+<div class="container">
+    <textarea name="css" class="css-input" placeholder="直接输入css语句，每一个以分号结尾">
+        padding: 10px;
+        flex: 1;
+        min-height: 300px;
+        font-size: 20px;
+        overflow-y: auto;
+    </textarea>
+
+    <pre class="widget-output"></pre>
+</div>
+
+<script>
+function hasDefined(val) {
+    return val !== undefined && val !== null;
+}
+
+function obj2str(obj) {
+    return `(\n${Object.keys(obj).map(key => `  ${key}: ${obj[key].replace(/\n/g, '\n  ')},\n`).join('')})`;
+}
+
+function canUseAll(obj) {
+    return Object.keys(obj).length === 4 && new Set(Object.values(obj)).size === 1;
+}
+
+function calcPt(val) {
+    var ptCoefficient = 1.4;
+    if (val.indexOf('pt') !== -1) {
+        return val.replace('pt', '') * ptCoefficient;
+    }
+    return val;
+}
+
+function calcPadding({top, right, bottom, left, all, obj}) {
+    if (hasDefined(top)) {
+        obj.top = calcPt(top);
+    } else if (hasDefined(right)) {
+        obj.right = calcPt(right);
+    } else if (hasDefined(bottom)) {
+        obj.bottom = calcPt(bottom);
+    } else if (hasDefined(left)) {
+        obj.left = calcPt(left);
+    } else if (hasDefined(all)) {
+        var allArr = all.split(' ');
+        if (allArr.length === 1) {
+            obj.top = obj.right = obj.bottom = obj.left = allArr[0];
+        } else if (allArr.length === 2) {
+            obj.top = obj.bottom = allArr[0];
+            obj.left = obj.right = allArr[1];
+        }
+    }
+}
+
+function calcOverflow({x, y, all, obj}) {
+    var overflowToBoolMap = {
+        'scroll': true,
+        'auto': true,
+        'hidden': false
+    }
+    if (hasDefined(x)) {
+        obj.x = overflowToBoolMap[x] || false;
+    } else if (hasDefined(y)) {
+        obj.y = overflowToBoolMap[y] || false;
+    } else if (hasDefined(all)) {
+        var allArr = all.split(' ');
+        if (allArr.length === 1) {
+            obj.x = obj.y = overflowToBoolMap[allArr[0]] || false;
+        } else if (allArr.length === 2) {
+            obj.x = overflowToBoolMap[allArr[0]] || false;
+            obj.y = overflowToBoolMap[allArr[1]] || false;
+        }
+    }
+}
+
+function transfer() {
+    var cssMap = {};
+    var css = document.getElementsByClassName('css-input')[0].value || document.getElementsByClassName('css-input')[0].innerHTML;
+    css.split(';').forEach(item => {
+        if (!item || item.indexOf(':') === -1) return;
+        var kvArr = item.split(':');
+        kvArr[0] = kvArr[0].replace(/\s+/g, '');
+        kvArr[1] = kvArr[1].replace(/^\s+|\s+$|px/g, '').replace(/\s+?/g, ' ');
+        cssMap[kvArr[0]] = kvArr[1];
+    });
+    var outputStr = 'YourWidget()';
+    var containerObj = {};
+    var decorationObj = {};
+    var paddingObj = {};
+    var constraintsObj = {};
+    var scrollObj = {x: false, y: false};
+    for (var key in cssMap) {
+        switch (key) {
+            case 'width':
+                containerObj.width = calcPt(cssMap.width);
+                break;
+            case 'height':
+                containerObj.height = calcPt(cssMap.height);
+                break;
+            case 'text-align':
+                containerObj.alignment = 'Alignment.top' + cssMap['text-align'].replace(/^[a-z]/g, (letter) => letter.toUpperCase());
+                break;
+            case 'min-width':
+                constraintsObj['minWidth'] = cssMap['min-width'];
+                break;
+            case 'min-height':
+                constraintsObj['minHeight'] = cssMap['min-height'];
+                break;
+            case 'max-width':
+                constraintsObj['maxWidth'] = cssMap['max-width'];
+                break;
+            case 'max-height':
+                constraintsObj['maxHeight'] = cssMap['max-height'];
+                break;
+            case 'padding':
+                calcPadding({all: cssMap.padding, obj: paddingObj});
+                break;
+            case 'padding-left':
+                calcPadding({left: cssMap['padding-left'], obj: paddingObj});
+                break;
+            case 'padding-right':
+                calcPadding({right: cssMap['padding-right'], obj: paddingObj});
+                break;
+            case 'padding-bottom':
+                calcPadding({bottom: cssMap['padding-bottom'], obj: paddingObj});
+                break;
+            case 'padding-top':
+                calcPadding({top: cssMap['padding-top'], obj: paddingObj});
+                break;
+            case 'overflow':
+                calcOverflow({all: cssMap.overflow, obj: scrollObj});
+                break;
+            case 'overflow-x':
+                calcOverflow({x: cssMap['overflow-x'], obj: scrollObj});
+                break;
+            case 'overflow-y':
+                calcOverflow({y: cssMap['overflow-y'], obj: scrollObj});
+                break;
+        }
+    }
+    if (decorationObj && Object.keys(decorationObj).length) {
+        containerObj.decoration = `BoxDecoration${obj2str(decorationObj)}`;
+    }
+    if (paddingObj && Object.keys(paddingObj).length) {
+        if (canUseAll(paddingObj)) {
+            containerObj.padding = `EdgeInsets.all(${paddingObj.left})`;
+        } else {
+            containerObj.padding = `EdgeInsets.only${obj2str(paddingObj)}`;
+        }
+    }
+    if (constraintsObj && Object.keys(constraintsObj).length) {
+        containerObj.constraints = `BoxConstraints${obj2str(constraintsObj)}`;
+    }
+
+    if (containerObj && Object.keys(containerObj).length) {
+        containerObj.child = outputStr;
+        outputStr = `Container${obj2str(containerObj)}`;
+    }
+    if (scrollObj.x) {
+        outputStr = `SingleChildScrollView${obj2str({scrollDirection: 'Axis.horizontal', child: outputStr})}`;
+    }
+    if (scrollObj.y) {
+        outputStr = `SingleChildScrollView${obj2str({scrollDirection: 'Axis.vertical', child: outputStr})}`;
+    }
+    console.log(outputStr)
+    document.getElementsByClassName('widget-output')[0].innerText = outputStr;
+}
+</script>
+
+</body>
+</html>
